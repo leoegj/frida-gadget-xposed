@@ -35,20 +35,25 @@ jobs:
       - name: Convert to DEX
         run: |
           mkdir -p build/dex
-          # Use specific build-tools version
           BT=$ANDROID_HOME/build-tools/34.0.0
-          # Collect all class files
-          find build/classes -name "*.class" > build/classes.txt
+          ls build/classes/de/robv/android/xposed/
+          ls build/classes/de/robv/android/xposed/callbacks/
+          ls build/classes/com/example/fridaloader/
           $BT/d8 --lib $ANDROID_HOME/platforms/android-34/android.jar \
-            --min-api 29 \
-            --output build/dex \
-            @build/classes.txt
+            --min-api 29 --output build/dex \
+            build/classes/de/robv/android/xposed/*.class \
+            build/classes/de/robv/android/xposed/callbacks/XC_LoadPackage.class \
+            build/classes/com/example/fridaloader/MainHook.class
+          ls -la build/dex/
 
       - name: Package APK
         run: |
           mkdir -p build/apk
-          # Create APK with aapt2
           BT=$ANDROID_HOME/build-tools/34.0.0
+          # Compile resources
+          $BT/aapt2 compile \
+            --dir app/src/main/res 2>/dev/null || true
+          # Link APK
           $BT/aapt2 link \
             -I $ANDROID_HOME/platforms/android-34/android.jar \
             --manifest app/src/main/AndroidManifest.xml \
@@ -57,29 +62,26 @@ jobs:
 
           # Add DEX
           cd build/dex
-          zip -j ../apk/unsigned.apk classes.dex classes2.dex 2>/dev/null || zip -j ../apk/unsigned.apk classes.dex
+          zip -j ../apk/unsigned.apk classes.dex 2>/dev/null || true
 
           # Add assets
           cd ../../app/src/main
-          zip -r ../../../build/apk/unsigned.apk assets/xposed_init
-          cd ../../../build/apk
+          zip -r ../../../build/apk/unsigned.apk assets/ 2>/dev/null || true
+          cd ../../../
 
-      - name: Sign APK
+      - name: Sign
         run: |
-          # Align
-          $ANDROID_HOME/build-tools/*/zipalign -f -p 4 unsigned.apk aligned.apk
-
-          # Create keystore
+          cd build/apk
+          BT=$ANDROID_HOME/build-tools/34.0.0
           keytool -genkey -v -keystore release.keystore \
             -alias release -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass password -keypass password -dname "CN=dev"
-
-          # Sign
-          $ANDROID_HOME/build-tools/*/apksigner sign \
+          $BT/zipalign -f -p 4 unsigned.apk aligned.apk
+          $BT/apksigner sign \
             --ks release.keystore --ks-pass pass:password \
             --out ../FridaGadgetLoader.apk aligned.apk
 
-      - name: Upload APK
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: FridaGadgetLoader
