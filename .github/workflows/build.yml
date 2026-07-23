@@ -47,34 +47,25 @@ jobs:
         run: |
           BT=$ANDROID_HOME/build-tools/34.0.0
           ANDROID_JAR=$ANDROID_HOME/platforms/android-34/android.jar
-          mkdir -p build/apk
 
-          # Method: Use aapt2 to create a proper APK with binary manifest
-          # First compile any resources (even empty ones)  
+          # Create binary AndroidManifest.xml using aapt
           mkdir -p build/apk_res/values
-          echo '<?xml version="1.0" encoding="utf-8"?> <resources/>' > build/apk_res/values/strings.xml
-
+          echo '<?xml version="1.0" encoding="utf-8"?><resources/>' > build/apk_res/values/strings.xml
           $BT/aapt package -f \
             -M app/src/main/AndroidManifest.xml \
             -S build/apk_res \
             -I $ANDROID_JAR \
-            -F build/apk/unsigned.apk \
-            2>&1
+            -F build/apk/unsigned.apk 2>&1
+          echo "aapt OK: $(ls -la build/apk/unsigned.apk)"
 
-          echo "=== aapt result ==="  
-          ls -la build/apk/unsigned.apk
-
-          # Replace/Add classes.dex
-          mkdir -p build/apk/merge
-          cd build/apk/merge
-          unzip -o ../unsigned.apk 2>/dev/null || true
-          cp ../../dex/classes.dex .
-          # Re-zip
-          zip -r ../unsigned_v2.apk . 2>&1
-          cd ../../
-
-          echo "=== Final unsigned APK ==="
-          ls -la build/apk/unsigned_v2.apk
+          # Add classes.dex
+          mkdir -p /tmp/apk_build
+          cd /tmp/apk_build
+          unzip -o $GITHUB_WORKSPACE/build/apk/unsigned.apk 2>/dev/null || true
+          cp $GITHUB_WORKSPACE/build/dex/classes.dex .
+          zip -r $GITHUB_WORKSPACE/build/apk/unsigned_v2.apk . 2>&1
+          cd $GITHUB_WORKSPACE
+          echo "Merge OK: $(ls -la build/apk/unsigned_v2.apk)"
 
       - name: Sign APK
         run: |
