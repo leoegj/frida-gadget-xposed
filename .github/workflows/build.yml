@@ -20,6 +20,11 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Install SDK components
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "platforms;android-34" "build-tools;34.0.0"
+          echo "SDK ready"
+
       - name: Download Xposed API
         run: |
           mkdir -p libs
