@@ -22,65 +22,39 @@ jobs:
 
       - name: Install SDK components
         run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "platforms;android-34" "build-tools;34.0.0"
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "platforms;android-34" "build-tools;34.0.0" > /dev/null 2>&1 || true
           echo "SDK ready"
 
-      - name: Download Xposed API
+      - name: Create Gradle wrapper
         run: |
-          mkdir -p libs
-          curl -sL -o libs/xposed-api.jar "https://repo1.maven.org/maven2/de/robv/android/xposed/api/93/api-93.jar"
+          mkdir -p gradle/wrapper
+          curl -sL "https://services.gradle.org/distributions/gradle-8.5-bin.zip" -o gradle/wrapper/gradle.zip
+          # Generate minimal wrapper
+          echo 'distributionBase=GRADLE_USER_HOME' > gradle/wrapper/gradle-wrapper.properties
+          echo 'distributionPath=wrapper/dists' >> gradle/wrapper/gradle-wrapper.properties
+          echo 'distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-bin.zip' >> gradle/wrapper/gradle-wrapper.properties
+          echo 'networkTimeout=10000' >> gradle/wrapper/gradle-wrapper.properties
+          echo 'validateDistributionUrl=true' >> gradle/wrapper/gradle-wrapper.properties
+          chmod +x gradlew 2>/dev/null || true
 
-      - name: Compile Java
+      - name: Build with Gradle
         run: |
-          mkdir -p build/classes
-          javac -d build/classes \
-            -classpath libs/xposed-api.jar:$ANDROID_HOME/platforms/android-34/android.jar \
-            app/src/main/java/com/example/fridaloader/MainHook.java
+          # Generate wrapper and build
+          export ANDROID_HOME=/usr/local/lib/android/sdk
+          export ANDROID_SDK_ROOT=$ANDROID_HOME
+          # Create local.properties
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          # Use gradle directly (pre-installed on runner)
+          which gradle
+          gradle wrapper --gradle-version=8.5
+          ./gradlew assembleRelease --no-daemon
 
-      - name: Convert to DEX
+      - name: Find APK
         run: |
-          mkdir -p build/dex
-          $ANDROID_HOME/build-tools/*/d8 --lib $ANDROID_HOME/platforms/android-34/android.jar \
-            --output build/dex \
-            build/classes/com/example/fridaloader/MainHook.class
-
-      - name: Package APK
-        run: |
-          mkdir -p build/apk
-          # Create the APK with aapt2
-          $ANDROID_HOME/build-tools/*/aapt2 link \
-            -I $ANDROID_HOME/platforms/android-34/android.jar \
-            --manifest app/src/main/AndroidManifest.xml \
-            -o build/apk/unsigned.apk
-
-          # Add DEX
-          cd build/apk
-          zip -j unsigned.apk ../dex/classes.dex
-
-          # Add assets (xposed_init must be in assets/ folder)
-          cd ../../app/src/main
-          zip -r ../../../build/apk/unsigned.apk assets/xposed_init
-          cd ../../../build/apk
-
-      - name: Align and Sign
-        run: |
-          # Align
-          $ANDROID_HOME/build-tools/*/zipalign -f -p 4 build/apk/unsigned.apk build/apk/aligned.apk
-
-          # Create keystore
-          keytool -genkey -v -keystore build/apk/release.keystore \
-            -alias release -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass password -keypass password -dname "CN=developer"
-
-          # Sign
-          $ANDROID_HOME/build-tools/*/apksigner sign \
-            --ks build/apk/release.keystore \
-            --ks-pass pass:password \
-            --out build/FridaGadgetLoader.apk \
-            build/apk/aligned.apk
+          find . -name "*.apk" -type f | head -5
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: FridaGadgetLoader
-          path: build/FridaGadgetLoader.apk
+          path: app/build/outputs/apk/release/*.apk
