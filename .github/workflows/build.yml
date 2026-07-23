@@ -20,67 +20,82 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install SDK
+      - name: Install SDK platforms
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "platforms;android-34" "build-tools;34.0.0" > /dev/null 2>&1 || true
 
-      - name: Compile Java
+      - name: Compile to DEX
         run: |
+          BT=$ANDROID_HOME/build-tools/34.0.0
+          ANDROID_JAR=$ANDROID_HOME/platforms/android-34/android.jar
+
+          # Compile Java
           mkdir -p build/classes
           find app/src/main/java -name "*.java" > build/sources.txt
-          javac -d build/classes \
-            -classpath $ANDROID_HOME/platforms/android-34/android.jar \
-            -source 8 -target 8 \
-            @build/sources.txt
+          javac -d build/classes -classpath $ANDROID_JAR -source 8 -target 8 @build/sources.txt
+          echo "Java compiled OK"
 
-      - name: Convert to DEX
-        run: |
+          # Convert to DEX
           mkdir -p build/dex
-          BT=$ANDROID_HOME/build-tools/34.0.0
-          ls build/classes/de/robv/android/xposed/
-          ls build/classes/de/robv/android/xposed/callbacks/
-          ls build/classes/com/example/fridaloader/
-          $BT/d8 --lib $ANDROID_HOME/platforms/android-34/android.jar \
-            --min-api 29 --output build/dex \
+          $BT/d8 --lib $ANDROID_JAR --min-api 29 --output build/dex \
             build/classes/de/robv/android/xposed/*.class \
             build/classes/de/robv/android/xposed/callbacks/*.class \
             build/classes/com/example/fridaloader/*.class
-          ls -la build/dex/
+          echo "DEX created: $(ls -la build/dex/classes.dex)"
 
-      - name: Package APK
+      - name: Create APK
         run: |
+          BT=$ANDROID_HOME/build-tools/34.0.0
+          ANDROID_JAR=$ANDROID_HOME/platforms/android-34/android.jar
           mkdir -p build/apk
-          BT=$ANDROID_HOME/build-tools/34.0.0
-          # Compile resources
-          $BT/aapt2 compile \
-            --dir app/src/main/res 2>/dev/null || true
-          # Link APK
-          $BT/aapt2 link \
-            -I $ANDROID_HOME/platforms/android-34/android.jar \
-            --manifest app/src/main/AndroidManifest.xml \
-            --auto-add-overlay \
-            -o build/apk/unsigned.apk
 
-          # Add DEX
-          cd build/dex
-          zip -j ../apk/unsigned.apk classes.dex 2>/dev/null || true
+          # Method: Use aapt2 to create a proper APK with binary manifest
+          # First compile any resources (even empty ones)  
+          mkdir -p build/apk_res/values
+          echo '<?xml version="1.0" encoding="utf-8"?> <resources/>' > build/apk_res/values/strings.xml
 
-          # Add assets
-          cd ../../app/src/main
-          zip -r ../../../build/apk/unsigned.apk assets/ 2>/dev/null || true
-          cd ../../../
+          $BT/aapt package -f \
+            -M app/src/main/AndroidManifest.xml \
+            -S build/apk_res \
+            -I $ANDROID_JAR \
+            -F build/apk/unsigned.apk \
+            2>&1
 
-      - name: Sign
+          echo "=== aapt result ==="  
+          ls -la build/apk/unsigned.apk
+
+          # Replace/Add classes.dex
+          mkdir -p build/apk/merge
+          cd build/apk/merge
+          unzip -o ../unsigned.apk 2>/dev/null || true
+          cp ../../dex/classes.dex .
+          # Re-zip
+          zip -r ../unsigned_v2.apk . 2>&1
+          cd ../../
+
+          echo "=== Final unsigned APK ==="
+          ls -la build/apk/unsigned_v2.apk
+
+      - name: Sign APK
         run: |
-          cd build/apk
           BT=$ANDROID_HOME/build-tools/34.0.0
-          keytool -genkey -v -keystore release.keystore \
+          
+          # Generate keystore
+          keytool -genkey -v -keystore /tmp/release.keystore \
             -alias release -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass password -keypass password -dname "CN=dev"
-          $BT/zipalign -f -p 4 unsigned.apk aligned.apk
+            -storepass password -keypass password -dname "CN=dev" 2>/dev/null
+          
+          # zipalign
+          $BT/zipalign -f -p 4 build/apk/unsigned_v2.apk build/apk/aligned.apk
+          
+          # Sign
           $BT/apksigner sign \
-            --ks release.keystore --ks-pass pass:password \
-            --out ../FridaGadgetLoader.apk aligned.apk
+            --ks /tmp/release.keystore --ks-pass pass:password \
+            --out build/FridaGadgetLoader.apk \
+            build/apk/aligned.apk
+          
+          echo "=== Final APK ==="
+          ls -la build/FridaGadgetLoader.apk
 
       - name: Upload
         uses: actions/upload-artifact@v4
