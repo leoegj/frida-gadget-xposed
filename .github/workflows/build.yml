@@ -35,17 +35,21 @@ jobs:
       - name: Convert to DEX
         run: |
           mkdir -p build/dex
-          $ANDROID_HOME/build-tools/*/d8 --lib $ANDROID_HOME/platforms/android-34/android.jar \
+          # Use specific build-tools version
+          BT=$ANDROID_HOME/build-tools/34.0.0
+          # Collect all class files
+          find build/classes -name "*.class" > build/classes.txt
+          $BT/d8 --lib $ANDROID_HOME/platforms/android-34/android.jar \
+            --min-api 29 \
             --output build/dex \
-            build/classes/de/robv/android/xposed/*.class \
-            build/classes/de/robv/android/xposed/callbacks/*.class \
-            build/classes/com/example/fridaloader/*.class
+            @build/classes.txt
 
       - name: Package APK
         run: |
           mkdir -p build/apk
           # Create APK with aapt2
-          $ANDROID_HOME/build-tools/*/aapt2 link \
+          BT=$ANDROID_HOME/build-tools/34.0.0
+          $BT/aapt2 link \
             -I $ANDROID_HOME/platforms/android-34/android.jar \
             --manifest app/src/main/AndroidManifest.xml \
             --auto-add-overlay \
