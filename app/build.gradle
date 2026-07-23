@@ -19,6 +19,12 @@ android {
     }
 }
 
+repositories {
+    google()
+    mavenCentral()
+    maven { url 'https://maven.lsposed.org/repository/' }
+}
+
 dependencies {
     compileOnly 'de.robv.android.xposed:api:93'
 }
