@@ -52,8 +52,10 @@ jobs:
           cd build/apk
           zip -j unsigned.apk ../dex/classes.dex
 
-          # Add assets
-          zip -j unsigned.apk ../../app/src/main/assets/xposed_init
+          # Add assets (xposed_init must be in assets/ folder)
+          cd ../../app/src/main
+          zip -r ../../../build/apk/unsigned.apk assets/xposed_init
+          cd ../../../build/apk
 
       - name: Align and Sign
         run: |
